@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -63,6 +63,7 @@ class BriefRequest(BaseModel):
     region: str = "UK"
     lookback_hours: int = Field(default=24, ge=1, le=24 * 14)
     audience: str = "general"
+    length: Literal["short", "medium", "long"] = "medium"  # drives the Publisher's word budget
     requested_at: datetime = Field(default_factory=_utcnow)
 
 

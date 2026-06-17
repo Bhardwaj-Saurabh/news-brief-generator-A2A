@@ -136,6 +136,15 @@ def test_agent_message_roundtrips_payload_type():
     assert restored.id == msg.id and restored.trace_id == "trace-123"
 
 
+def test_regenerate_primitive_model_copy_preserves_topic_region():
+    # The UI's "regenerate with tweaks" builds a new request via model_copy from the previous one.
+    original = BriefRequest(topic="ai", region="US", audience="general", length="medium")
+    tweaked = original.model_copy(update={"length": "long", "audience": "investors"})
+    assert tweaked.topic == "ai" and tweaked.region == "US"  # preserved
+    assert tweaked.length == "long" and tweaked.audience == "investors"  # changed
+    assert original.length == "medium"  # original (frozen) untouched
+
+
 def test_resolve_region_uk_triple():
     ids = resolve_region("UK")
     assert (ids.country_code, ids.weather_city, ids.media_region) == ("gb", "London", "GB")

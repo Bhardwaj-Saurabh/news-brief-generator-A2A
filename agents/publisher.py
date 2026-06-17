@@ -91,12 +91,20 @@ def _msg(role: str, text: str) -> Message:
     return Message(role=role, contents=[Content(type="text", text=text)])
 
 
+_LENGTH_WORDS = {
+    "short": "roughly 200-300 words",
+    "medium": "roughly 400-600 words",
+    "long": "roughly 700-900 words",
+}
+
+
 def _system_message(report: ScoutReport) -> Message:
     audience = report.request.audience
+    word_budget = _LENGTH_WORDS[report.request.length]
     return _msg(
         "system",
         f"You are the editor of a concise daily news brief for a {audience} audience. "
-        "Write a neutral, factual brief of roughly 400-600 words: a short title and 3-5 sections, "
+        f"Write a neutral, factual brief of {word_budget}: a short title and 3-5 sections, "
         "each with a heading and a markdown body. Cover the news, then weather, markets, and media as "
         "the data supports. Base the brief ONLY on the DATA provided; do not invent facts, numbers, or "
         "sources, and reference sources naturally in the prose.\n\n"
