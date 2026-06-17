@@ -55,6 +55,11 @@ _ALIASES: dict[str, str] = {
 }
 
 
+def available_regions() -> list[str]:
+    """Canonical region keys (for UI dropdowns), default first."""
+    return [DEFAULT_REGION, *(k for k in _REGIONS if k != DEFAULT_REGION)]
+
+
 def resolve_region(region: str) -> RegionIds:
     """Map a human region label to its per-tool identifiers, falling back to the default."""
     key = (region or "").strip().upper()
