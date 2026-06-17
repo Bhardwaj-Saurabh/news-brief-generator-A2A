@@ -28,7 +28,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("world_data_server")
 
+# OpenWeatherMap only accepts its key as the `appid` QUERY param (no header auth), and httpx
+# logs full request URLs at INFO. Silence httpx's request logging so the key can't leak there.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 NEWSAPI_BASE = "https://newsapi.org/v2"
+OWM_BASE = "https://api.openweathermap.org/data/2.5"
 REQUEST_TIMEOUT = httpx.Timeout(10.0)  # timeout on every external call (cross-cutting rule)
 MAX_PAGE_SIZE = 100  # NewsAPI hard cap on pageSize
 
@@ -148,6 +153,101 @@ async def get_top_headlines(
 
     log.info("get_top_headlines path=%s returned=%d/%d", path, len(headlines), len(articles))
     return headlines
+
+
+class WeatherSnapshot(BaseModel):
+    """Current weather, always normalised to metric regardless of the requested `units`.
+
+    The field names (`temp_c`, `wind_kph`) encode the unit so no downstream consumer ever has
+    to guess — that is the whole point of normalising on the way out."""
+
+    model_config = ConfigDict(frozen=True)
+
+    city: str = Field(min_length=1)
+    country: str = Field(min_length=1, description="ISO country code, e.g. 'GB'")
+    temp_c: float
+    feels_like_c: float
+    conditions: str = Field(min_length=1, description="Human description, e.g. 'overcast clouds'")
+    wind_kph: float
+    observed_at: datetime
+
+
+def _to_celsius(value: float, units: str) -> float:
+    """metric upstream is already °C; imperial is °F."""
+    return value if units == "metric" else (value - 32.0) * 5.0 / 9.0
+
+
+def _to_kph(speed: float, units: str) -> float:
+    """metric wind is m/s (×3.6); imperial is mph (×1.609344)."""
+    return speed * 3.6 if units == "metric" else speed * 1.609344
+
+
+async def _request_owm(params: dict[str, object]) -> dict:
+    """GET OpenWeatherMap current weather, or raise ToolError.
+
+    Unlike NewsAPI, OWM only accepts the key as the `appid` query param — httpx INFO logging is
+    silenced at import so it does not end up in logs.
+    """
+    key = os.environ.get("OPENWEATHER_API_KEY", "").strip()
+    if not key:
+        raise ToolError("OPENWEATHER_API_KEY is not configured")
+
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.get(f"{OWM_BASE}/weather", params={**params, "appid": key})
+    except httpx.HTTPError as exc:
+        raise ToolError(f"weather upstream unreachable: {exc}") from exc
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise ToolError(f"weather upstream returned non-JSON (HTTP {resp.status_code})") from exc
+
+    # OWM signals success with cod == 200 (int); errors come back as {"cod":"404","message":...}.
+    if resp.status_code != 200 or str(data.get("cod")) != "200":
+        code = data.get("cod", resp.status_code)
+        message = data.get("message", "unknown error")
+        raise ToolError(f"weather upstream error [{code}]: {message}")
+
+    return data
+
+
+def _to_snapshot(data: dict, units: str) -> WeatherSnapshot:
+    """Flatten an OWM response into a metric WeatherSnapshot (raises if malformed)."""
+    main = data.get("main") or {}
+    wind = data.get("wind") or {}
+    weather = (data.get("weather") or [{}])[0] or {}
+    return WeatherSnapshot.model_validate(
+        {
+            "city": data.get("name"),
+            "country": (data.get("sys") or {}).get("country"),
+            "temp_c": round(_to_celsius(main["temp"], units), 1),
+            "feels_like_c": round(_to_celsius(main["feels_like"], units), 1),
+            "conditions": weather.get("description"),
+            "wind_kph": round(_to_kph(wind["speed"], units), 1),
+            "observed_at": datetime.fromtimestamp(data["dt"], tz=timezone.utc),
+        }
+    )
+
+
+@mcp.tool
+async def get_current_weather(city: str, units: str = "metric") -> WeatherSnapshot:
+    """Current weather for a city.
+
+    `units` selects how the upstream is queried ('metric' or 'imperial'); the returned snapshot
+    is ALWAYS metric (`temp_c`, `wind_kph`). An unknown city is surfaced as a clear error.
+    """
+    if units not in ("metric", "imperial"):
+        raise ToolError(f"units must be 'metric' or 'imperial', got {units!r}")
+
+    data = await _request_owm({"q": city, "units": units})
+    try:
+        snapshot = _to_snapshot(data, units)
+    except (TypeError, KeyError, ValidationError) as exc:
+        raise ToolError(f"unexpected weather response shape: {exc}") from exc
+
+    log.info("get_current_weather city=%s -> %s (%.1f°C)", city, snapshot.city, snapshot.temp_c)
+    return snapshot
 
 
 if __name__ == "__main__":

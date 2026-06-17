@@ -63,10 +63,10 @@ Notes:
 > Run instructions are filled in as the tasks are built (servers in Tasks 2–5, UI in Task 10).
 
 ```bash
-# MCP servers (one per terminal, once implemented)
-uv run python -m servers.world_data_server     # :8801
-uv run python -m servers.finance_server         # :8802
-uv run python -m servers.media_server           # :8803
+# MCP servers (one per terminal)
+uv run python -m servers.world_data_server     # :8801  tools: get_top_headlines, get_current_weather
+uv run python -m servers.finance_server         # :8802  (Task 4)
+uv run python -m servers.media_server           # :8803  (Task 5)
 
 # Streamlit UI (once implemented)
 uv run streamlit run app/streamlit_app.py

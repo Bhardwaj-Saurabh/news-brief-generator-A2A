@@ -105,3 +105,96 @@ def test_upstream_error_surfaces_as_clean_tool_error(monkeypatch):
     with pytest.raises(ToolError) as excinfo:
         _run(scenario())
     assert "upstream error" in str(excinfo.value)
+
+
+# --- Weather tool (Task 3) ---
+
+# OWM "metric" response: temp already °C, wind in m/s.
+OWM_METRIC = {
+    "cod": 200,
+    "name": "London",
+    "sys": {"country": "GB"},
+    "main": {"temp": 15.0, "feels_like": 14.2},
+    "wind": {"speed": 3.6},  # m/s -> 12.96 kph
+    "weather": [{"description": "overcast clouds"}],
+    "dt": 1_750_000_000,
+}
+
+# OWM "imperial" response: temp in °F, wind in mph — must be normalised to metric.
+OWM_IMPERIAL = {
+    "cod": 200,
+    "name": "New York",
+    "sys": {"country": "US"},
+    "main": {"temp": 59.0, "feels_like": 57.2},  # 59°F -> 15.0°C
+    "wind": {"speed": 10.0},  # mph -> 16.1 kph
+    "weather": [{"description": "clear sky"}],
+    "dt": 1_750_000_000,
+}
+
+
+def test_both_tools_discoverable_in_one_server():
+    async def scenario():
+        async with Client(wd.mcp) as client:
+            return [t.name for t in await client.list_tools()]
+
+    names = _run(scenario())
+    assert {"get_top_headlines", "get_current_weather"} <= set(names)
+
+
+def test_weather_metric_snapshot(monkeypatch):
+    async def fake_owm(params):
+        return OWM_METRIC
+
+    monkeypatch.setattr(wd, "_request_owm", fake_owm)
+
+    async def scenario():
+        async with Client(wd.mcp) as client:
+            return (await client.call_tool("get_current_weather", {"city": "London"})).data
+
+    snap = _run(scenario())
+    assert snap.city == "London" and snap.country == "GB"
+    assert snap.temp_c == 15.0
+    assert snap.wind_kph == 13.0  # 3.6 m/s * 3.6, rounded 1dp
+    assert snap.conditions == "overcast clouds"
+
+
+def test_weather_imperial_is_normalised_to_metric(monkeypatch):
+    async def fake_owm(params):
+        return OWM_IMPERIAL
+
+    monkeypatch.setattr(wd, "_request_owm", fake_owm)
+
+    async def scenario():
+        async with Client(wd.mcp) as client:
+            return (
+                await client.call_tool("get_current_weather", {"city": "New York", "units": "imperial"})
+            ).data
+
+    snap = _run(scenario())
+    assert snap.temp_c == 15.0  # 59°F -> 15.0°C
+    assert snap.wind_kph == 16.1  # 10 mph -> 16.09344 kph, 1dp
+
+
+def test_invalid_units_rejected():
+    async def scenario():
+        async with Client(wd.mcp) as client:
+            await client.call_tool("get_current_weather", {"city": "London", "units": "kelvin"})
+
+    with pytest.raises(ToolError) as excinfo:
+        _run(scenario())
+    assert "units must be" in str(excinfo.value)
+
+
+def test_invalid_city_surfaces_clean_error(monkeypatch):
+    async def fake_owm(params):
+        raise ToolError("weather upstream error [404]: city not found")
+
+    monkeypatch.setattr(wd, "_request_owm", fake_owm)
+
+    async def scenario():
+        async with Client(wd.mcp) as client:
+            await client.call_tool("get_current_weather", {"city": "Nowheresville"})
+
+    with pytest.raises(ToolError) as excinfo:
+        _run(scenario())
+    assert "city not found" in str(excinfo.value)
