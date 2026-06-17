@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.claude
+
+# Virtual environments
+.venv
+
+# .env files
+.env
+
+# Saved briefs — keep the directory, ignore generated output
+saved_briefs/*
+!saved_briefs/.gitkeep
+
+# claude files
+CLAUDE.md
