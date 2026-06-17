@@ -35,6 +35,29 @@ Required secrets live in `.env` (never committed). The `.env.example` template l
 the four upstream API keys (NewsAPI, OpenWeatherMap, Finnhub, YouTube), the Azure OpenAI
 settings for the Publisher, and the three MCP server ports.
 
+After filling in `.env`, verify everything is wired up (this prints presence only, never values):
+
+```bash
+uv run python scripts/check_keys.py
+```
+
+## API keys — where to get each
+
+All five are free or use an existing subscription. Set each in `.env` (copy from `.env.example`).
+
+| Service | `.env` variable(s) | Where to get it | Free tier | Approval |
+|---|---|---|---|---|
+| **NewsAPI.org** | `NEWSAPI_KEY` | [newsapi.org/register](https://newsapi.org/register) | 100 req/day; **dev key is localhost-only** and `everything` results are delayed 24h | Instant |
+| **OpenWeatherMap** | `OPENWEATHER_API_KEY` | [openweathermap.org/api](https://openweathermap.org/api) → *API keys* tab | 60 calls/min, 1M/month (Current Weather) | Instant, but the key can take **up to ~2h to activate** |
+| **Finnhub** | `FINNHUB_API_KEY` | [finnhub.io/register](https://finnhub.io/register) | 60 calls/min; quotes + company news on free | Instant |
+| **YouTube Data API v3** | `YOUTUBE_API_KEY` | [Google Cloud Console](https://console.cloud.google.com/) → create project → *enable* "YouTube Data API v3" → *Credentials* → API key | 10,000 units/day (`search.list` = 100 units, `videos.list` = 1) | Instant |
+| **Azure OpenAI** (Publisher LLM) | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_CHAT_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION` | [Azure AI Foundry](https://ai.azure.com/) / Azure portal: create an Azure OpenAI resource, deploy a chat model, copy *Keys & Endpoint* + deployment name | Pay-per-token (uses your Azure subscription) | Generally available; deployment is immediate |
+
+Notes:
+- **Never print or commit key values.** `.env` is gitignored; `scripts/check_keys.py` reports presence only.
+- **Restrict keys where possible** (e.g. restrict the YouTube key to the YouTube Data API) to limit blast radius if leaked.
+- The free NewsAPI dev key works for local development only — fine for this project, not for deployment.
+
 ## Running
 
 > Run instructions are filled in as the tasks are built (servers in Tasks 2–5, UI in Task 10).
